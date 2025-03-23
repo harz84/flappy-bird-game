@@ -2,22 +2,121 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Flappy Bird Robot</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+        }
+        
+        body {
+            background-color: #f0f0f0;
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            font-family: Arial, sans-serif;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        
         canvas {
             border: 1px solid black;
             display: block;
-            margin: 0 auto;
-            width: 100%; /* Membuat kanvas responsif berdasarkan lebar layar */
-            height: auto; /* Menjaga aspek rasio */
-            max-width: 480px; /* Batas maksimum agar tidak terlalu besar di layar besar */
-            max-height: 640px; /* Batas maksimum agar tidak terlalu besar */
+            width: 100%;
+            max-width: 480px;
+            height: auto;
+            max-height: 85vh;
+            background-color: #87CEEB; /* Background color fallback */
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        }
+        
+        #controls {
+            margin-top: 10px;
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            user-select: none;
+        }
+        
+        #soundToggle {
+            background-color: #3498db;
+        }
+        
+        #startButton {
+            flex-grow: 2;
+            margin: 0 10px;
+        }
+        
+        /* Orientation warning */
+        #orientationWarning {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+            z-index: 1000;
+            color: white;
+            text-align: center;
+            padding-top: 40%;
+            font-size: 24px;
+        }
+        
+        /* Hide buttons when game is in progress */
+        .hidden {
+            display: none !important;
+        }
+        
+        @media screen and (max-height: 500px) and (orientation: landscape) {
+            #orientationWarning {
+                display: block;
+            }
         }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="480" height="640"></canvas>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="480" height="640"></canvas>
+        <div id="controls">
+            <button id="soundToggle" class="button">🔊</button>
+            <button id="startButton" class="button">Mulai Permainan</button>
+            <button id="restartButton" class="button hidden">Main Lagi</button>
+        </div>
+    </div>
+    
+    <div id="orientationWarning">
+        Silakan putar perangkat Anda ke mode potret untuk pengalaman bermain yang lebih baik.
+    </div>
+    
     <script src="game.js"></script>
 </body>
 </html>
