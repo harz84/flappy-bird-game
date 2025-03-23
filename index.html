@@ -2,22 +2,55 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Flappy Bird Robot</title>
     <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #4EC0CA;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
         canvas {
-            border: 1px solid black;
-            display: block;
-            margin: 0 auto;
-            width: 100%; /* Membuat kanvas responsif berdasarkan lebar layar */
-            height: auto; /* Menjaga aspek rasio */
-            max-width: 480px; /* Batas maksimum agar tidak terlalu besar di layar besar */
-            max-height: 640px; /* Batas maksimum agar tidak terlalu besar */
+            touch-action: none;
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+        }
+
+        #mobileControls {
+            position: fixed;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            display: none;
+        }
+
+        .mobile-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #000;
+            margin: 0 20px;
+            touch-action: manipulation;
+        }
+
+        @media (hover: none) and (pointer: coarse) {
+            #mobileControls {
+                display: block;
+            }
         }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="480" height="640"></canvas>
+    <canvas id="gameCanvas"></canvas>
+    <div id="mobileControls">
+        <button class="mobile-btn" id="jumpBtn">Tap</button>
+        <button class="mobile-btn" id="restartBtn">R</button>
+    </div>
     <script src="game.js"></script>
 </body>
 </html>
