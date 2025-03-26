@@ -62,7 +62,7 @@ let bird = {
     height: 40, // Akan di-override oleh resizeCanvas
     // --- PERUBAHAN GRAVITY & LIFT ---
     gravity: isMobile ? 0.11 : 0.14, // Gravitasi dikurangi (burung lebih ringan)
-    lift: isMobile ? -9.5 : -11.4,   // Lompatan diperkuat 20% (lebih negatif)
+    lift: isMobile ? -1.0 : -3.0,   // Lompatan diperkuat 20% (lebih negatif)
     // --- AKHIR PERUBAHAN ---
     velocity: 0
 };
