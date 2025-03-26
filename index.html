@@ -121,7 +121,7 @@
         }
 
         /* Show warning in landscape mode */
-        @media screen and (orientation: landscape) {
+        @media screen and (orientation: landscape) and (max-height: 550px) { /* Adjusted height threshold slightly */
             #orientationWarning {
                 display: flex; /* Use flex for better centering */
                 justify-content: center;
