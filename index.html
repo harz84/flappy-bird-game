@@ -9,7 +9,7 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            /* touch-action: none; Removed here, handled more specifically if needed */
+            /* touch-action: none; Removed here, handled more specifically on canvas */
         }
 
         html, body {
@@ -22,7 +22,7 @@
         }
 
         #gameContainer {
-            position: relative;
+            position: relative; /* Needed for absolute positioning of pause button */
             width: 100%;
             height: 100%; /* Use full available height */
             display: flex;
@@ -37,7 +37,9 @@
             width: 100%; /* Take full width of container */
             max-width: 480px; /* Limit max width */
             height: auto; /* Maintain aspect ratio based on width */
-            max-height: 90vh; /* Limit height relative to viewport, slightly more room */
+            /* max-height: 90vh; /* Limit height relative to viewport */
+            /* Adjusted max-height slightly to better ensure controls are visible */
+            max-height: calc(100vh - 70px); /* Example: subtract approximate height of controls */
             background-color: #87CEEB; /* Background color fallback */
             box-shadow: 0 0 10px rgba(0,0,0,0.3);
             touch-action: none; /* Prevent default touch actions ONLY on canvas */
@@ -48,59 +50,77 @@
             width: 100%;
             max-width: 480px; /* Match canvas max-width */
             display: flex;
-            justify-content: space-between;
-            padding: 0 5px; /* Add slight padding */
+            justify-content: space-between; /* Distribute space */
+            align-items: center; /* Align items vertically */
+            padding: 0 10px; /* Add some horizontal padding */
         }
 
         .button {
             background-color: #4CAF50;
             border: none;
             color: white;
-            padding: 12px 18px; /* Slightly larger buttons */
+            padding: 14px 20px; /* Slightly larger touch area */
             text-align: center;
             text-decoration: none;
             display: inline-block;
             font-size: 16px;
             margin: 4px 2px;
             cursor: pointer;
-            border-radius: 8px; /* Slightly rounder */
+            border-radius: 8px;
             box-shadow: 0 3px 6px rgba(0,0,0,0.2);
             user-select: none; /* Prevent text selection */
-            -webkit-tap-highlight-color: transparent; /* Remove tap highlight */
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
             flex-shrink: 0; /* Prevent buttons from shrinking too much */
+            transition: background-color 0.2s ease; /* Smooth feedback */
         }
+        .button:active {
+             background-color: #45a049; /* Darker shade on press */
+        }
+
 
         #soundToggle {
             background-color: #3498db;
-            padding: 12px 15px; /* Adjust padding for icon */
+            padding: 14px 18px; /* Adjust padding for icon size */
         }
+         #soundToggle:active {
+             background-color: #2980b9;
+         }
 
         #startButton {
             flex-grow: 1; /* Allow start button to take more space */
-            margin: 0 10px;
+            margin: 0 10px; /* Add space between buttons */
         }
 
         #restartButton {
              flex-grow: 1; /* Allow restart button to take more space */
-             margin: 0 10px;
+             margin: 0 10px; /* Add space between buttons */
         }
 
-        /* Hide elements when game is active */
+        /* --- State Management for Buttons --- */
+
+        /* Default: Show Start and Sound */
+        #restartButton { display: none; }
+        #startButton { display: inline-block; }
+        #soundToggle { display: inline-block; }
+
+
+        /* Game Active: Hide Start and Sound (Pause button is handled by JS) */
         .game-active #startButton,
         .game-active #soundToggle {
             display: none !important;
         }
-
-        /* Show restart button only when game over */
-        #restartButton {
-            display: none; /* Hidden by default */
+        .game-active #restartButton {
+             display: none !important; /* Ensure restart is hidden */
         }
+
+
+        /* Game Over: Show Restart, hide others */
         .game-over #restartButton {
-             display: inline-block !important; /* Show only on game over */
+             display: inline-block !important;
         }
          .game-over #startButton,
          .game-over #soundToggle {
-             display: none !important; /* Ensure others are hidden on game over */
+             display: none !important;
          }
 
 
@@ -116,17 +136,23 @@
             z-index: 1000;
             color: white;
             text-align: center;
-            padding: 40% 20px 0 20px; /* Add horizontal padding */
-            font-size: 20px; /* Adjust font size */
+            font-size: 20px;
+            flex-direction: column; /* Stack icon and text */
+            justify-content: center;
+            align-items: center;
+            padding: 20px; /* Add padding */
+        }
+         #orientationWarning::before {
+            content: "🔄"; /* Rotate icon */
+            font-size: 48px;
+            margin-bottom: 20px;
         }
 
-        /* Show warning in landscape mode */
-        @media screen and (orientation: landscape) and (max-height: 550px) { /* Adjusted height threshold slightly */
+
+        /* Show warning in landscape mode on smaller height devices */
+        @media screen and (orientation: landscape) and (max-height: 550px) {
             #orientationWarning {
-                display: flex; /* Use flex for better centering */
-                justify-content: center;
-                align-items: center;
-                padding: 0 20px; /* Center text vertically too */
+                display: flex;
             }
             /* Optionally hide game content when warning is shown */
             /* #gameContainer { display: none; } */
@@ -137,10 +163,10 @@
     <div id="gameContainer">
         <canvas id="gameCanvas" width="480" height="640"></canvas>
         <div id="controls">
+            <!-- Order potentially changed for better flow: Start/Restart in middle -->
             <button id="soundToggle" class="button">🔊</button>
             <button id="startButton" class="button">Mulai Permainan</button>
             <button id="restartButton" class="button">Main Lagi</button>
-             <!-- Sound toggle is hidden during play, user can toggle before starting -->
         </div>
     </div>
 
