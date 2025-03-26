@@ -13,7 +13,10 @@ function resizeCanvas() {
     const container = canvas.parentElement || document.body;
     const controlsHeight = document.getElementById('controls')?.offsetHeight || 60;
     let containerWidth = container.clientWidth || window.innerWidth;
+    // Gunakan window.innerHeight sebagai fallback jika clientHeight 0 atau tidak tersedia
     let availableHeight = (container.clientHeight || window.innerHeight) - controlsHeight - 20;
+    // Pastikan availableHeight tidak negatif
+    availableHeight = Math.max(150, availableHeight); // Minimal tinggi area canvas
 
     let canvasWidth = Math.min(containerWidth, 480);
     const targetAspectRatio = 3 / 4;
@@ -25,40 +28,47 @@ function resizeCanvas() {
     }
 
     canvasWidth = Math.max(240, canvasWidth);
-    // Ensure height is recalculated based on potentially clamped width
     canvasHeight = canvasWidth / targetAspectRatio;
-    // Ensure height isn't negative or zero if calculations go wrong
-    canvasHeight = Math.max(150, canvasHeight);
+    canvasHeight = Math.max(150, canvasHeight); // Pastikan tinggi minimal
 
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
+    // Terapkan dimensi HANYA jika valid
+    if (canvasWidth > 0 && canvasHeight > 0) {
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
 
-    bird.width = Math.max(25, canvas.width * 0.09);
-    bird.height = bird.width * (2/3);
+        bird.width = Math.max(25, canvas.width * 0.09);
+        bird.height = bird.width * (2/3);
 
-    if (!gameStarted || gameOver) {
-         bird.x = canvas.width * 0.2;
-         bird.y = canvas.height / 2 - bird.height / 2;
-    }
+        // Reset posisi hanya jika game belum mulai atau sudah selesai
+        // DAN jika canvas punya dimensi > 0
+        if ((!gameStarted || gameOver) && canvas.height > 0) {
+             bird.x = canvas.width * 0.2;
+             bird.y = canvas.height / 2 - bird.height / 2;
+        }
 
-    pipeGap = Math.max(120, canvas.height * 0.22);
+        // Hitung pipeGap hanya jika canvas punya tinggi > 0
+        if(canvas.height > 0) {
+             pipeGap = Math.max(120, canvas.height * 0.22);
+        }
 
-    if (!gameStarted) {
-        drawInitialScreen();
+        // Gambar ulang layar awal jika game belum dimulai
+        if (!gameStarted) {
+            drawInitialScreen();
+        }
+    } else {
+        console.warn("Invalid canvas dimensions calculated:", canvasWidth, canvasHeight);
     }
 }
 
-// Variabel permainan
+// Variabel permainan (termasuk lift kuat & standar)
 let bird = {
     x: 50,
     y: 150,
     width: 50,
     height: 35,
     gravity: isMobile ? 0.11 : 0.14,
-    // --- PERUBAHAN: Lift standar & kuat ---
-    lift: isMobile ? -3.0 : -3.0,         // Lompatan standar
-    strongLift: isMobile ? -4.2 : -3.8,   // Lompatan lebih kuat untuk tap cepat
-    // --- AKHIR PERUBAHAN ---
+    lift: isMobile ? -3.0 : -3.0,
+    strongLift: isMobile ? -4.2 : -3.8,
     velocity: 0
 };
 
@@ -72,14 +82,12 @@ let audioInitialized = false;
 let soundEnabled = true;
 let lastJumpTime = 0;
 
-const MIN_JUMP_INTERVAL = isMobile ? 200 : 150; // ms debounce dasar
-// --- PERUBAHAN: Threshold untuk tap cepat ---
-const RAPID_TAP_THRESHOLD = isMobile ? 350 : 300; // ms (Jika tap < threshold ini, gunakan strongLift)
+const MIN_JUMP_INTERVAL = isMobile ? 200 : 150;
+const RAPID_TAP_THRESHOLD = isMobile ? 350 : 300;
 
-// Variabel kesulitan
+// Variabel kesulitan (termasuk interval pipa lebih jauh)
 let pipeSpeed = isMobile ? 1.1 : 1.3;
-// --- PERUBAHAN: Jarak spawn pipa lebih jauh di mobile ---
-let pipeSpawnInterval = isMobile ? 180 : 120; // Lebih besar = lebih jauh
+let pipeSpawnInterval = isMobile ? 180 : 120; // Jarak pipa lebih jauh di mobile
 let pipeGap = 180;
 
 // Audio effects (kode audio tetap sama)
@@ -167,36 +175,27 @@ function updateSoundButton() {
     }
 }
 
-// --- PERUBAHAN: Logika handleJump untuk variable lift ---
+// Logika handleJump dengan variable lift (tetap dipertahankan)
 function handleJump() {
     if (!gameStarted || gameOver || isPaused) return;
     const now = Date.now();
     const timeSinceLastJump = now - lastJumpTime;
 
-    // 1. Debounce dasar: Jangan proses jika tap terlalu cepat (spam)
     if (timeSinceLastJump < MIN_JUMP_INTERVAL) {
-        // console.log("Jump too soon, ignored."); // Optional debug
         return;
     }
 
-    // 2. Tentukan kekuatan lompatan berdasarkan waktu sejak lompatan terakhir
-    let currentLift = bird.lift; // Mulai dengan lift standar
+    let currentLift = bird.lift;
     if (timeSinceLastJump < RAPID_TAP_THRESHOLD) {
-        // Jika waktu sejak lompatan terakhir cukup singkat (menandakan tap cepat/intens)
-        currentLift = bird.strongLift; // Gunakan lift yang lebih kuat
-        // console.log(`Rapid tap! Using strong lift: ${currentLift}`); // Optional debug
-    } else {
-        // console.log(`Normal tap. Using standard lift: ${currentLift}`); // Optional debug
+        currentLift = bird.strongLift;
     }
 
-    // 3. Terapkan lompatan
-    lastJumpTime = now;          // Catat waktu lompatan ini
-    bird.velocity = currentLift; // Terapkan kekuatan lompatan yang dipilih
-    playSound(jumpBuffer);       // Mainkan suara lompat
+    lastJumpTime = now;
+    bird.velocity = currentLift;
+    playSound(jumpBuffer);
 }
-// --- AKHIR PERUBAHAN ---
 
-// --- Event Listeners --- (Tetap sama, kecuali pemanggil initGame di akhir)
+// --- Event Listeners --- (Pemanggil initGame di akhir dikembalikan)
 document.addEventListener("keydown", function(event) {
     if (!gameStarted || gameOver) return;
     if ((event.key === " " || event.key === "ArrowUp" || event.key === "Shift") && !isPaused) {
@@ -249,12 +248,15 @@ function startGame() {
     pipes = [];
 
     resizeCanvas(); // Panggil resize untuk set ukuran & posisi awal yang benar
-    bird.y = canvas.height / 2 - bird.height / 2;
-    bird.velocity = 0;
+    // Pastikan posisi di reset setelah resize jika canvas valid
+    if (canvas.height > 0) {
+        bird.y = canvas.height / 2 - bird.height / 2;
+        bird.velocity = 0;
+    }
 
     // Reset kesulitan (nilai sudah termasuk penyesuaian jarak pipa)
     pipeSpeed = isMobile ? 1.1 : 1.3;
-    pipeSpawnInterval = isMobile ? 180 : 120; // Menggunakan nilai baru
+    pipeSpawnInterval = isMobile ? 180 : 120;
 
     playSound(startBuffer);
 
@@ -273,7 +275,7 @@ function togglePause() {
         pauseBtn.textContent = isPaused ? "▶️" : "⏸️";
     }
     if (!isPaused) {
-        lastJumpTime = Date.now(); // Reset jump timer on unpause
+        lastJumpTime = Date.now();
         update();
     }
 }
@@ -282,7 +284,6 @@ let pauseBtn;
 function addPauseButton() {
     if (document.getElementById('pauseBtn')) return;
     pauseBtn = document.createElement('button');
-    // ... (styling pause button tetap sama) ...
     pauseBtn.id = 'pauseBtn';
     pauseBtn.textContent = "⏸️";
     pauseBtn.setAttribute('aria-label', 'Pause/Resume Game');
@@ -337,11 +338,17 @@ function getPipeStyle() {
         case 4: color1 = '#A76FB9'; color2 = '#76438A'; break;
         default: color1 = '#FBB040'; color2 = '#F7941E'; break;
     }
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, color1);
-    gradient.addColorStop(1, color2);
-    return gradient;
+    // Pastikan gradient dibuat hanya jika canvas punya tinggi
+    if (canvas.height > 0) {
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        gradient.addColorStop(0, color1);
+        gradient.addColorStop(1, color2);
+        return gradient;
+    }
+    // Fallback jika tinggi canvas 0 atau tidak valid
+    return color1; // Gunakan warna solid sebagai fallback
 }
+
 
 function getCurrentLevel() {
     return Math.floor(score / 10) + 1;
@@ -351,15 +358,19 @@ function adjustDifficulty() {
     if (score > 0 && score % 10 === 0) {
          const level = getCurrentLevel();
          pipeSpeed *= 1.08;
-         // Spawn interval juga dikurangi sedikit saat naik level, tapi tetap ada batas bawah
          pipeSpawnInterval = Math.max(isMobile ? 90 : 70, Math.round(pipeSpawnInterval * 0.96));
-
          console.log(`Level Up ${level}! Speed: ${pipeSpeed.toFixed(2)}, Spawn Interval: ${pipeSpawnInterval}`);
          playSound(successBuffer);
     }
 }
 
-function checkCollision(pipe) {
+function checkCollision(currentPipe) { // Terima pipa yang dicek sebagai argumen
+    // Pastikan currentPipe valid
+    if (!currentPipe || typeof currentPipe.x === 'undefined' || typeof currentPipe.top === 'undefined' || typeof currentPipe.bottom === 'undefined') {
+        // console.warn("Invalid pipe data in checkCollision");
+        return false; // Tidak bisa cek jika data pipa tidak lengkap
+    }
+
     const toleranceRatio = 0.15;
     const birdToleranceX = bird.width * toleranceRatio;
     const birdToleranceY = bird.height * toleranceRatio;
@@ -370,108 +381,122 @@ function checkCollision(pipe) {
 
     const pipeBodyWidth = 50;
     const pipeEdgeWidth = 60;
-    const pipeEdgeHeight = 15;
-    const pipeX = pipe.x;
-    const pipeTopOpeningY = pipes[i].top; // Ketinggian solid atas
-    const pipeBottomOpeningY = canvas.height - pipes[i].bottom; // Y mulai solid bawah
+    // const pipeEdgeHeight = 15; // Tidak digunakan secara langsung di logika ini
+    const pipeX = currentPipe.x;
+    const topSolidHeight = currentPipe.top; // Ketinggian solid atas
+    const bottomSolidHeight = currentPipe.bottom; // Ketinggian solid bawah
+    const bottomPipeSolidStartY = canvas.height - bottomSolidHeight; // Y mulai solid bawah
 
     const pipeEdgeStartX = pipeX - (pipeEdgeWidth - pipeBodyWidth) / 2;
     const pipeEdgeEndX = pipeEdgeStartX + pipeEdgeWidth;
 
+    // 1. Cek overlap X (lebih efisien)
     const collisionX = birdHitboxX + birdHitboxWidth > pipeEdgeStartX && birdHitboxX < pipeEdgeEndX;
-    if (!collisionX) return false;
+    if (!collisionX) return false; // Jika tidak overlap X, pasti tidak tabrakan
 
-    // Cek tabrakan Y dengan bagian SOLID pipa (termasuk tepi)
-    const collisionTop = birdHitboxY < pipeTopOpeningY; // Menyentuh pipa atas
-    const collisionBottom = birdHitboxY + birdHitboxHeight > pipeBottomOpeningY; // Menyentuh pipa bawah
+    // 2. Cek overlap Y dengan bagian solid
+    const collisionTopPipe = birdHitboxY < topSolidHeight; // Bagian atas burung lebih tinggi dari batas bawah pipa atas
+    const collisionBottomPipe = birdHitboxY + birdHitboxHeight > bottomPipeSolidStartY; // Bagian bawah burung lebih rendah dari batas atas pipa bawah
 
-    // Perlu diperhalus: Cek tabrakan dengan Tepi saja jika TIDAK kena badan utama
-    // Tapi untuk simple, cek saja overlap Y dengan area solid
-     if (collisionTop || collisionBottom) {
-         // Periksa lagi lebih detail: Apakah kena tepi atau badan?
-         // Untuk sementara, deteksi ini cukup
-         return true;
-     }
-
-     return false;
-
-    /* // Detail check (lebih kompleks, mungkin tidak perlu)
-    const topPipeSolidEndY = pipeTopOpeningY;
-    const bottomPipeSolidStartY = pipeBottomOpeningY;
-
-    const collisionTopPipe = birdHitboxY < topPipeSolidEndY;
-    const collisionBottomPipe = birdHitboxY + birdHitboxHeight > bottomPipeSolidStartY;
-
+    // Jika overlap X DAN overlap Y dengan salah satu pipa solid, maka tabrakan
     return collisionTopPipe || collisionBottomPipe;
-    */
 }
 
 
 function drawPipes() {
-    if (frameCount % pipeSpawnInterval === 0) {
+    if (frameCount % pipeSpawnInterval === 0 && canvas.height > 100 && pipeGap > 0) { // Tambahkan check canvas.height & pipeGap
         const minTop = canvas.height * 0.1;
         const maxTop = canvas.height - pipeGap - (canvas.height * 0.1);
-        let topPipeHeight = Math.floor(Math.random() * (maxTop - minTop + 1)) + minTop;
-        topPipeHeight = Math.max(50, topPipeHeight);
-        let bottomPipeHeight = canvas.height - topPipeHeight - pipeGap;
-        bottomPipeHeight = Math.max(50, bottomPipeHeight);
-        topPipeHeight = canvas.height - bottomPipeHeight - pipeGap;
+        // Pastikan maxTop > minTop sebelum random
+        if (maxTop > minTop) {
+            let topPipeHeight = Math.floor(Math.random() * (maxTop - minTop + 1)) + minTop;
+            topPipeHeight = Math.max(50, topPipeHeight); // Min height
+            let bottomPipeHeight = canvas.height - topPipeHeight - pipeGap;
+            bottomPipeHeight = Math.max(50, bottomPipeHeight); // Min height
+            topPipeHeight = canvas.height - bottomPipeHeight - pipeGap; // Recalculate top if bottom was clamped
 
-        pipes.push({
-            x: canvas.width,
-            top: topPipeHeight,      // Ketinggian solid atas
-            bottom: bottomPipeHeight,// Ketinggian solid bawah
-            scored: false
-        });
+            // Hanya push jika hasil perhitungan valid
+            if (topPipeHeight > 0 && bottomPipeHeight > 0) {
+                 pipes.push({
+                     x: canvas.width,
+                     top: topPipeHeight,
+                     bottom: bottomPipeHeight,
+                     scored: false
+                 });
+            } else {
+                 console.warn("Failed to create valid pipe dimensions.");
+            }
+        } else {
+            console.warn("Cannot generate random pipe height, maxTop <= minTop.");
+        }
     }
 
-    ctx.fillStyle = getPipeStyle();
+    const pipeStyle = getPipeStyle(); // Ambil style sekali
+    if (!pipeStyle) return; // Jangan gambar jika style tidak valid
+    ctx.fillStyle = pipeStyle;
+
 
     for (let i = pipes.length - 1; i >= 0; i--) {
         pipes[i].x -= pipeSpeed;
 
+        const pipe = pipes[i]; // Referensi ke pipa saat ini
         const pipeWidth = 50;
         const pipeEdgeWidth = 60;
         const pipeEdgeHeight = 15;
-        const pipeX = pipes[i].x;
-        const topSolidHeight = pipes[i].top;
-        const bottomSolidHeight = pipes[i].bottom;
+        const pipeX = pipe.x;
+        const topSolidHeight = pipe.top;
+        const bottomSolidHeight = pipe.bottom;
         const bottomPipeY = canvas.height - bottomSolidHeight;
         const edgeX = pipeX - (pipeEdgeWidth - pipeWidth) / 2;
 
-        // Atas
-        ctx.fillRect(pipeX, 0, pipeWidth, topSolidHeight);
-        ctx.fillRect(edgeX, topSolidHeight - pipeEdgeHeight, pipeEdgeWidth, pipeEdgeHeight);
-        // Bawah
-        ctx.fillRect(pipeX, bottomPipeY, pipeWidth, bottomSolidHeight);
-        ctx.fillRect(edgeX, bottomPipeY, pipeEdgeWidth, pipeEdgeHeight); // Tepi bawah mulai di Y pipa bawah
+        // Gambar hanya jika dimensi valid
+        if (topSolidHeight > 0 && bottomSolidHeight > 0 && canvas.height > 0) {
+            // Atas
+            ctx.fillRect(pipeX, 0, pipeWidth, topSolidHeight);
+            if (topSolidHeight >= pipeEdgeHeight) { // Hindari tepi negatif
+                 ctx.fillRect(edgeX, topSolidHeight - pipeEdgeHeight, pipeEdgeWidth, pipeEdgeHeight);
+            }
+            // Bawah
+            ctx.fillRect(pipeX, bottomPipeY, pipeWidth, bottomSolidHeight);
+            ctx.fillRect(edgeX, bottomPipeY, pipeEdgeWidth, pipeEdgeHeight);
+        }
 
-        if (checkCollision(pipes[i])) { // Gunakan index 'i' saat memanggil checkCollision
+
+        // Gunakan 'pipe' (objek pipa saat ini) untuk checkCollision
+        if (checkCollision(pipe)) {
             gameOver = true;
             gameStarted = false;
             playSound(gameOverBuffer);
             gameContainer.classList.remove('game-active');
             gameContainer.classList.add('game-over');
             if (pauseBtn) pauseBtn.style.display = 'none';
-            break;
+            // Tidak perlu break jika game over, update loop akan berhenti
+            // break; // Opsional: bisa hentikan loop pipa lebih awal
         }
 
-        const pipeCenterX = pipes[i].x + pipeWidth / 2;
-        if (pipeCenterX < bird.x && !pipes[i].scored) {
-            score++;
-            pipes[i].scored = true;
-            playSound(scoreBuffer);
-            adjustDifficulty();
+        // Skor (jika game belum over)
+        if (!gameOver) {
+            const pipeCenterX = pipe.x + pipeWidth / 2;
+            if (pipeCenterX < bird.x && !pipe.scored) {
+                score++;
+                pipe.scored = true;
+                playSound(scoreBuffer);
+                adjustDifficulty();
+            }
         }
 
-        if (pipes[i].x < -pipeEdgeWidth) {
+
+        // Hapus pipa
+        if (pipe.x < -pipeEdgeWidth) {
             pipes.splice(i, 1);
         }
     }
 }
 
 function drawUI() {
-    // ... (UI drawing tetap sama) ...
+    // Pastikan canvas punya dimensi sebelum menggambar UI
+    if (canvas.width <= 0 || canvas.height <= 0) return;
+
     const fontSizeScore = Math.max(18, Math.floor(canvas.width / 25));
     const fontSizeLevel = Math.max(14, Math.floor(canvas.width / 30));
     const uiPadding = 10;
@@ -539,11 +564,20 @@ function resetGame() {
 
 let animationFrameId;
 function update() {
+    // Hentikan jika game over (gambar UI game over terakhir kali)
     if (gameOver) {
-        drawUI();
+        // Pastikan UI terakhir digambar sebelum benar-benar berhenti
+        // Coba gambar sekali lagi di sini
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawPipes(); // Gambar pipa terakhir
+        drawBird(); // Gambar burung terakhir
+        drawUI(); // Gambar UI game over
         return;
     }
+
+    // Handle pause
     if (isPaused) {
+        // Gambar state terakhir + UI pause, tapi jangan update state & jangan request frame baru
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         drawPipes();
         drawBird();
@@ -551,13 +585,21 @@ function update() {
         return;
     }
 
+    // --- Game Aktif ---
+    // Pastikan canvas valid sebelum update & gambar
+    if (canvas.width <= 0 || canvas.height <= 0) {
+         console.warn("Canvas size invalid during update loop. Requesting next frame and retrying.");
+         animationFrameId = requestAnimationFrame(update); // Coba lagi di frame berikutnya
+         return;
+     }
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Burung
+    // Burung Update
     bird.velocity += bird.gravity;
     bird.y += bird.velocity;
 
-    // Tabrakan Bawah
+    // Tabrakan Bawah -> Game Over
     if (bird.y + bird.height > canvas.height) {
         bird.y = canvas.height - bird.height;
         bird.velocity = 0;
@@ -566,34 +608,47 @@ function update() {
         playSound(gameOverBuffer);
         gameContainer.classList.remove('game-active');
         gameContainer.classList.add('game-over');
-         if (pauseBtn) pauseBtn.style.display = 'none';
+        if (pauseBtn) pauseBtn.style.display = 'none';
+        // Jangan langsung return, biarkan UI game over digambar di akhir loop ini
     }
     // Tabrakan Atas
     if (bird.y < 0) {
         bird.y = 0;
-        bird.velocity = 0; // Hentikan momentum ke atas jika membentur langit-langit
+        bird.velocity = 0;
     }
 
-    // Pipa (menggambar juga mengupdate posisi & logika)
+    // Pipa Update & Gambar (juga cek tabrakan & skor)
+    // Memastikan drawPipes dipanggil meski game over di frame ini,
+    // agar posisi pipa terakhir tergambar sebelum UI game over
     drawPipes();
 
-    // Gambar Burung
+    // Gambar Burung (setelah pipa, sebelum UI)
     drawBird();
 
-    // Gambar UI
+    // Gambar UI (skor, level, pesan game over/pause jika relevan)
     drawUI();
 
-    frameCount++;
+    // Tingkatkan frame count jika game belum over
+    if (!gameOver) {
+        frameCount++;
+    }
 
+    // Request frame berikutnya HANYA jika game belum over DAN tidak pause
     if (!gameOver && !isPaused) {
          animationFrameId = requestAnimationFrame(update);
+    } else if (gameOver) {
+         // Jika game over, pastikan loop berhenti
+         if (animationFrameId) cancelAnimationFrame(animationFrameId);
+         // Gambar UI Game Over sekali lagi untuk memastikan
+         drawUI();
     }
 }
 
 function drawInitialScreen() {
+    // Pastikan canvas valid sebelum menggambar
     if (canvas.width > 0 && canvas.height > 0) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawBird(); // Gambar burung di posisi awal
+        drawBird();
         ctx.fillStyle = "#FFFFFF";
         ctx.strokeStyle = "#000000";
         ctx.lineWidth = 2;
@@ -602,18 +657,27 @@ function drawInitialScreen() {
         ctx.font = `bold ${startFontSize}px Arial`;
         const startText = "Tekan 'Mulai Permainan'";
         const textY = canvas.height / 2 + bird.height + 30;
-        ctx.strokeText(startText, canvas.width / 2, textY);
-        ctx.fillText(startText, canvas.width / 2, textY);
+        // Pastikan textY tidak di luar canvas
+        if (textY < canvas.height - startFontSize) {
+            ctx.strokeText(startText, canvas.width / 2, textY);
+            ctx.fillText(startText, canvas.width / 2, textY);
+        }
+    } else {
+        // console.warn("Attempted to draw initial screen on invalid canvas.");
     }
 }
 
 function initGame() {
     addPauseButton();
-    resizeCanvas();
     updateSoundButton();
-    // Tampilan awal sudah digambar oleh resizeCanvas -> drawInitialScreen
+    // Panggil resizeCanvas SEKARANG untuk set ukuran awal
+    // resizeCanvas akan memanggil drawInitialScreen jika game belum mulai
+    resizeCanvas();
+    // Listener resize tetap ada untuk menangani perubahan orientasi/ukuran nanti
+    // window.addEventListener('resize', resizeCanvas); // Ini sudah ada di atas
 }
 
-// --- PERUBAHAN: Panggil initGame setelah DOM siap ---
-window.addEventListener('DOMContentLoaded', initGame);
-// --- AKHIR PERUBAHAN ---
+// --- PEMANGGILAN INIT DIKEMBALIKAN ---
+// Panggil initGame langsung saat script selesai dimuat
+initGame();
+// --- AKHIR PEMANGGILAN INIT ---
