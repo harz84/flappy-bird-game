@@ -3,78 +3,107 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Flappy Bird Robot</title>
+    <title>Flappy Bird Robot - Mobile Optimized</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            touch-action: none;
+            /* touch-action: none; Removed here, handled more specifically if needed */
         }
-        
-        body {
-            background-color: #f0f0f0;
-            overflow: hidden;
-            position: fixed;
+
+        html, body {
+            height: 100%; /* Ensure html and body take full height */
+            overflow: hidden; /* Prevent scrolling */
+            position: fixed; /* Prevent scrolling */
             width: 100%;
-            height: 100%;
+            background-color: #f0f0f0;
             font-family: Arial, sans-serif;
         }
-        
+
         #gameContainer {
             position: relative;
             width: 100%;
-            height: 100vh;
+            height: 100%; /* Use full available height */
             display: flex;
-            justify-content: center;
-            align-items: center;
+            justify-content: center; /* Center canvas horizontally */
+            align-items: center; /* Center canvas vertically */
             flex-direction: column;
         }
-        
+
         canvas {
             border: 1px solid black;
             display: block;
-            width: 100%;
-            max-width: 480px;
-            height: auto;
-            max-height: 85vh;
+            width: 100%; /* Take full width of container */
+            max-width: 480px; /* Limit max width */
+            height: auto; /* Maintain aspect ratio based on width */
+            max-height: 90vh; /* Limit height relative to viewport, slightly more room */
             background-color: #87CEEB; /* Background color fallback */
             box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            touch-action: none; /* Prevent default touch actions ONLY on canvas */
         }
-        
+
         #controls {
             margin-top: 10px;
             width: 100%;
-            max-width: 480px;
+            max-width: 480px; /* Match canvas max-width */
             display: flex;
             justify-content: space-between;
+            padding: 0 5px; /* Add slight padding */
         }
-        
+
         .button {
             background-color: #4CAF50;
             border: none;
             color: white;
-            padding: 10px 15px;
+            padding: 12px 18px; /* Slightly larger buttons */
             text-align: center;
             text-decoration: none;
             display: inline-block;
             font-size: 16px;
             margin: 4px 2px;
             cursor: pointer;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            user-select: none;
+            border-radius: 8px; /* Slightly rounder */
+            box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+            user-select: none; /* Prevent text selection */
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight */
+            flex-shrink: 0; /* Prevent buttons from shrinking too much */
         }
-        
+
         #soundToggle {
             background-color: #3498db;
+            padding: 12px 15px; /* Adjust padding for icon */
         }
-        
+
         #startButton {
-            flex-grow: 2;
+            flex-grow: 1; /* Allow start button to take more space */
             margin: 0 10px;
         }
-        
+
+        #restartButton {
+             flex-grow: 1; /* Allow restart button to take more space */
+             margin: 0 10px;
+        }
+
+        /* Hide elements when game is active */
+        .game-active #startButton,
+        .game-active #soundToggle {
+            display: none !important;
+        }
+
+        /* Show restart button only when game over */
+        #restartButton {
+            display: none; /* Hidden by default */
+        }
+        .game-over #restartButton {
+             display: inline-block !important; /* Show only on game over */
+        }
+         .game-over #startButton,
+         .game-over #soundToggle {
+             display: none !important; /* Ensure others are hidden on game over */
+         }
+
+
         /* Orientation warning */
         #orientationWarning {
             display: none;
@@ -87,19 +116,20 @@
             z-index: 1000;
             color: white;
             text-align: center;
-            padding-top: 40%;
-            font-size: 24px;
+            padding: 40% 20px 0 20px; /* Add horizontal padding */
+            font-size: 20px; /* Adjust font size */
         }
-        
-        /* Hide buttons when game is in progress */
-        .hidden {
-            display: none !important;
-        }
-        
-        @media screen and (max-height: 500px) and (orientation: landscape) {
+
+        /* Show warning in landscape mode */
+        @media screen and (orientation: landscape) {
             #orientationWarning {
-                display: block;
+                display: flex; /* Use flex for better centering */
+                justify-content: center;
+                align-items: center;
+                padding: 0 20px; /* Center text vertically too */
             }
+            /* Optionally hide game content when warning is shown */
+            /* #gameContainer { display: none; } */
         }
     </style>
 </head>
@@ -109,14 +139,15 @@
         <div id="controls">
             <button id="soundToggle" class="button">🔊</button>
             <button id="startButton" class="button">Mulai Permainan</button>
-            <button id="restartButton" class="button hidden">Main Lagi</button>
+            <button id="restartButton" class="button">Main Lagi</button>
+             <!-- Sound toggle is hidden during play, user can toggle before starting -->
         </div>
     </div>
-    
+
     <div id="orientationWarning">
         Silakan putar perangkat Anda ke mode potret untuk pengalaman bermain yang lebih baik.
     </div>
-    
+
     <script src="game.js"></script>
 </body>
 </html>

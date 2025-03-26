@@ -1,655 +1,620 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+const gameContainer = document.getElementById("gameContainer");
+const startButton = document.getElementById("startButton");
+const restartButton = document.getElementById("restartButton");
+const soundButton = document.getElementById("soundToggle"); // Reference for potential future use
 
 // Deteksi perangkat mobile
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-// Variabel untuk offscreen rendering
-const offscreenCanvas = document.createElement('canvas');
-const offscreenCtx = offscreenCanvas.getContext('2d');
-const pipePatterns = {
-    brick: null,
-    bamboo: null,
-    wood: null,
-    stone: null
-};
+// Variabel untuk offscreen rendering (Tidak diperlukan lagi untuk pola)
+// const offscreenCanvas = document.createElement('canvas');
+// const offscreenCtx = offscreenCanvas.getContext('2d');
+// const pipePatterns = { ... }; // Dihapus
 
 // Fungsi untuk menyesuaikan canvas dengan ukuran layar
 function resizeCanvas() {
     const container = canvas.parentElement || document.body;
-    const containerWidth = container.clientWidth || window.innerWidth;
+    let containerWidth = container.clientWidth || window.innerWidth;
+    let containerHeight = container.clientHeight || window.innerHeight;
+
+    // Clamp width to max width
+    containerWidth = Math.min(containerWidth, 480);
+
+    // Calculate target aspect ratio (e.g., 3:4 like original 480x640)
+    const targetAspectRatio = 3 / 4;
+    let canvasHeight = containerWidth / targetAspectRatio;
+
+    // Ensure canvas fits within the available vertical space (e.g., 90vh from CSS)
+    const maxHeight = containerHeight * 0.9;
+    if (canvasHeight > maxHeight) {
+        canvasHeight = maxHeight;
+        // Optional: adjust width based on new height to maintain aspect ratio
+        // containerWidth = canvasHeight * targetAspectRatio;
+    }
+
     canvas.width = containerWidth;
-    canvas.height = Math.min(window.innerHeight * 0.8, containerWidth * 1.5);
-    
-    // Resize offscreen canvas juga
-    offscreenCanvas.width = 50; // Lebar pipa
-    offscreenCanvas.height = canvas.height;
-    
+    canvas.height = canvasHeight;
+
     // Perbarui ukuran burung berdasarkan ukuran canvas
-    bird.width = Math.max(30, canvas.width * 0.1);
-    bird.height = Math.max(20, canvas.width * 0.07);
-    
-    // Reset posisi burung
-    bird.x = canvas.width * 0.2;
-    bird.y = canvas.height / 2;
-    
-    // Perbarui pola pipa
-    createPipePatterns();
+    bird.width = Math.max(30, canvas.width * 0.1); // Bird size relative to width
+    bird.height = bird.width * (2/3); // Maintain bird aspect ratio
+
+    // Reset posisi burung ke tengah (vertikal) dan sisi kiri (horizontal)
+    if (!gameOver) { // Only reset position if game is not over (avoids jump on resize)
+         bird.x = canvas.width * 0.2;
+         bird.y = canvas.height / 2 - bird.height / 2;
+    }
+
+    // Perbarui celah pipa berdasarkan tinggi canvas
+    pipeGap = Math.max(150, canvas.height * 0.25); // Celah relatif terhadap tinggi canvas
+
+    // (Tidak perlu lagi perbarui pola pipa)
+    // createPipePatterns();
 }
 
 // Variabel permainan
 let bird = {
     x: 50,
     y: 150,
-    width: 60,
-    height: 40,
-    gravity: isMobile ? 0.25 : 0.3,
-    lift: isMobile ? -5 : -6,
+    width: 60, // Akan di-override oleh resizeCanvas
+    height: 40, // Akan di-override oleh resizeCanvas
+    gravity: isMobile ? 0.25 : 0.3, // Gravitasi sedikit lebih rendah di mobile
+    lift: isMobile ? -5.5 : -6.5, // Lompatan sedikit lebih kuat di mobile
     velocity: 0
 };
 
 let pipes = [];
 let frameCount = 0;
 let score = 0;
+let gameStarted = false; // Track if the game has started
 let gameOver = false;
 let isPaused = false;
 let audioInitialized = false;
+let soundEnabled = true; // Status suara
 let lastJumpTime = 0;
-const MIN_JUMP_INTERVAL = isMobile ? 300 : 200; // ms
+const MIN_JUMP_INTERVAL = isMobile ? 250 : 150; // ms, sedikit lebih lama di mobile
 
 // Variabel untuk kesulitan
-let pipeSpeed = 1.5; // Kecepatan awal pipa (Level 1)
-let pipeSpawnInterval = isMobile ? 180 : 150; // Jarak antar pipa (Level 1)
-let pipeGap = isMobile ? 220 : 200; // Celah antar pipa (Level 1)
+let pipeSpeed = isMobile ? 1.3 : 1.5; // Kecepatan awal pipa (sedikit lebih lambat di mobile)
+let pipeSpawnInterval = isMobile ? 150 : 120; // Jarak antar pipa (lebih jauh di mobile)
+let pipeGap = 200; // Celah antar pipa (Akan di-override oleh resizeCanvas)
 
 // Audio effects
-const audioStart = new Audio('start.wav');
-const audioJump = new Audio('jump.wav');
-const audioScore = new Audio('score.wav');
-const audioGameOver = new Audio('gameover.wav');
-const audioSuccess = new Audio('success.mp3');
+let audioContext; // For better audio handling on mobile
+let jumpBuffer, scoreBuffer, gameOverBuffer, startBuffer, successBuffer;
 
-// Variabel kontrol untuk status audio dan antrian lompat
-let isStartPlaying = false;
-let jumpQueue = false;
+// Fungsi untuk memuat audio menggunakan Web Audio API
+async function setupAudio() {
+    if (audioInitialized) return;
+    try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const loadSound = async (url) => {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            return await audioContext.decodeAudioData(arrayBuffer);
+        };
 
-// Fungsi untuk memuat audio secara lazy
-function initAudio() {
-    if (!audioInitialized) {
-        const audioFiles = [
-            { element: audioStart, src: 'start.wav' },
-            { element: audioJump, src: 'jump.wav' },
-            { element: audioScore, src: 'score.wav' },
-            { element: audioGameOver, src: 'gameover.wav' },
-            { element: audioSuccess, src: 'success.mp3' }
-        ];
-        
-        let loadedCount = 0;
-        audioFiles.forEach(audio => {
-            audio.element.preload = 'auto';
-            audio.element.src = audio.src;
-            audio.element.onloadeddata = () => {
-                loadedCount++;
-                if (loadedCount === audioFiles.length) {
-                    audioInitialized = true;
-                    console.log("All audio loaded successfully");
-                }
-            };
-            audio.element.load();
-        });
-    }
-}
-
-// Fungsi untuk memainkan suara dengan penanganan error
-function playSound(audio) {
-    if (!audioInitialized) {
+        [jumpBuffer, scoreBuffer, gameOverBuffer, startBuffer, successBuffer] = await Promise.all([
+            loadSound('jump.wav'),
+            loadSound('score.wav'),
+            loadSound('gameover.wav'),
+            loadSound('start.wav'),
+            loadSound('success.mp3')
+        ]);
         audioInitialized = true;
-        initAudio();
-        console.log("Audio initialized by user interaction");
+        console.log("Web Audio API initialized and sounds loaded.");
+        // Update sound button based on initial state
+        updateSoundButton();
+    } catch (error) {
+        console.error("Failed to initialize Web Audio API or load sounds:", error);
+        // Fallback or disable audio
+        soundEnabled = false;
+        audioInitialized = false; // Mark as not initialized if error
+        updateSoundButton();
     }
-    audio.play().catch(error => {
-        console.log("Error playing audio: ", error);
-    });
 }
 
-// Event listener untuk mendeteksi akhir suara start
-audioStart.onended = () => {
-    isStartPlaying = false;
-    if (jumpQueue) {
-        playSound(audioJump); // Putar jump yang tertunda
-        jumpQueue = false;    // Kosongkan antrian
+// Fungsi untuk memainkan suara (Web Audio API)
+function playSound(buffer) {
+    if (!soundEnabled || !audioInitialized || !buffer || !audioContext) return;
+     // Resume context if suspended (common in mobile browsers before interaction)
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
     }
-};
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.destination);
+    source.start(0);
+}
+
+// Fungsi toggle suara
+function toggleSound() {
+    soundEnabled = !soundEnabled;
+    updateSoundButton();
+    // Initialize audio if toggled on for the first time by user
+    if (soundEnabled && !audioInitialized) {
+        setupAudio();
+    }
+}
+
+// Update tampilan tombol suara
+function updateSoundButton() {
+    if (soundButton) {
+         soundButton.textContent = soundEnabled ? "🔊" : "🔇";
+    }
+}
+
 
 // Fungsi untuk menangani lompatan
 function handleJump() {
+    // Jangan lompat jika game belum dimulai atau sudah selesai atau dijeda
+    if (!gameStarted || gameOver || isPaused) return;
+
     const now = Date.now();
-    // Cegah spam tap
+    // Cegah spam tap/klik
     if (now - lastJumpTime < MIN_JUMP_INTERVAL) return;
-    
+
     lastJumpTime = now;
     bird.velocity = bird.lift;
-    
-    if (isStartPlaying) {
-        jumpQueue = true;
-    } else {
-        playSound(audioJump);
-    }
+    playSound(jumpBuffer);
 }
+
+// --- Event Listeners ---
 
 // Kontrol keyboard
 document.addEventListener("keydown", function(event) {
-    if ((event.key === " " || event.shiftKey) && !gameOver && !isPaused) {
+    if (!gameStarted || gameOver) return; // Hanya berlaku saat game berjalan
+
+    if ((event.key === " " || event.key === "ArrowUp" || event.key === "Shift") && !isPaused) {
         handleJump();
-        if (!audioInitialized) {
-            initAudio();
-            playSound(audioStart);
-        }
     }
-    if (event.key.toLowerCase() === "r" && gameOver) {
-        resetGame();
-    }
+    // Pause functionality remains (toggle with 'P')
     if (event.key.toLowerCase() === "p") {
         togglePause();
     }
 });
 
-// Kontrol sentuh untuk perangkat mobile
+// Kontrol sentuh untuk perangkat mobile (Hanya pada Canvas)
 canvas.addEventListener("touchstart", function(event) {
-    event.preventDefault(); // Mencegah scroll atau zoom saat disentuh
-    if (!gameOver && !isPaused) {
+    event.preventDefault(); // Mencegah scroll/zoom saat menyentuh canvas
+    if (!gameStarted || gameOver) return; // Jangan lakukan apa-apa jika game belum/tidak aktif
+
+    if (!isPaused) {
         handleJump();
-        if (!audioInitialized) {
-            initAudio();
-            playSound(audioStart);
-        }
-    } else if (gameOver) {
-        resetGame();
     }
 }, { passive: false });
 
-// Mencegah scroll saat bermain di mobile
+// Tombol Mulai
+startButton.addEventListener('click', startGame);
+
+// Tombol Restart
+restartButton.addEventListener('click', resetGame);
+
+// Tombol Suara
+soundButton.addEventListener('click', () => {
+    // Initialize on first click if not already
+    if (!audioInitialized) {
+         setupAudio(); // Try setting up audio context on user interaction
+    }
+    toggleSound();
+});
+
+// Resize listener
+window.addEventListener('resize', resizeCanvas);
+
+// Prevent scrolling on body (more robust)
 document.body.addEventListener('touchmove', function(event) {
-    if (!gameOver && !isPaused) event.preventDefault();
+   // Allow scrolling ONLY if the target is not the canvas or its container
+   if (!canvas.contains(event.target)) {
+       return;
+   }
+   event.preventDefault();
 }, { passive: false });
+
+// --- Game Functions ---
+
+function startGame() {
+    if (gameStarted) return; // Cegah mulai ganda
+    gameStarted = true;
+    gameOver = false;
+    isPaused = false;
+    score = 0;
+    frameCount = 0; // Reset frame count
+    pipes = []; // Kosongkan pipa
+
+    // Reset posisi & kecepatan burung
+    bird.y = canvas.height / 2 - bird.height / 2;
+    bird.velocity = 0;
+
+    // Reset kesulitan
+    pipeSpeed = isMobile ? 1.3 : 1.5;
+    pipeSpawnInterval = isMobile ? 150 : 120;
+    // pipeGap direset di resizeCanvas
+
+    // Setup audio jika belum
+    if (!audioInitialized) {
+        setupAudio().then(() => {
+             playSound(startBuffer); // Mainkan suara start setelah audio siap
+        });
+    } else {
+        playSound(startBuffer);
+    }
+
+    // Update UI state
+    gameContainer.classList.add('game-active');
+    gameContainer.classList.remove('game-over');
+    if (pauseBtn) pauseBtn.style.display = 'block'; // Tampilkan tombol pause
+
+    // Mulai game loop
+    if (animationFrameId) cancelAnimationFrame(animationFrameId); // Hentikan loop lama jika ada
+    update();
+}
+
 
 // Toggle pause
 function togglePause() {
+    if (gameOver || !gameStarted) return; // Tidak bisa pause jika game over atau belum mulai
     isPaused = !isPaused;
     if (pauseBtn) {
         pauseBtn.textContent = isPaused ? "▶️" : "⏸️";
     }
+    // Jika melanjutkan, restart game loop
+    if (!isPaused) {
+        update();
+    }
 }
 
-// Tambah tombol pause
+// Tambah tombol pause (jika belum ada)
 let pauseBtn;
 function addPauseButton() {
+    if (document.getElementById('pauseBtn')) return; // Jangan tambah jika sudah ada
+
     pauseBtn = document.createElement('button');
+    pauseBtn.id = 'pauseBtn';
     pauseBtn.textContent = "⏸️";
     pauseBtn.style.position = "absolute";
-    pauseBtn.style.top = "10px";
-    pauseBtn.style.right = "10px";
+    pauseBtn.style.top = "15px"; // Beri jarak sedikit dari atas
+    pauseBtn.style.right = "15px"; // Beri jarak sedikit dari kanan
     pauseBtn.style.zIndex = "100";
     pauseBtn.style.fontSize = "24px";
-    pauseBtn.style.backgroundColor = "rgba(255,255,255,0.7)";
+    pauseBtn.style.backgroundColor = "rgba(255,255,255,0.6)";
     pauseBtn.style.border = "none";
     pauseBtn.style.borderRadius = "50%";
-    pauseBtn.style.width = "40px";
-    pauseBtn.style.height = "40px";
+    pauseBtn.style.width = "45px"; // Sedikit lebih besar
+    pauseBtn.style.height = "45px";
     pauseBtn.style.padding = "0";
     pauseBtn.style.cursor = "pointer";
-    
+    pauseBtn.style.display = 'none'; // Sembunyikan awalnya
+    pauseBtn.style.lineHeight = '45px'; // Bantu vertikal align icon
+     pauseBtn.style.textAlign = 'center';
     pauseBtn.addEventListener('click', togglePause);
-    
-    const container = canvas.parentElement || document.body;
-    container.style.position = "relative";
-    container.appendChild(pauseBtn);
+
+    gameContainer.appendChild(pauseBtn); // Tambahkan ke container utama
 }
 
 // Muat gambar burung
 const birdImage = new Image();
-birdImage.src = 'burung.png';
+birdImage.src = 'burung.png'; // Pastikan path ini benar
 
 // Fungsi untuk menggambar burung dari gambar
 function drawBird() {
+    // Gambar burung jika gambar sudah dimuat dan valid
     if (birdImage.complete && birdImage.naturalWidth !== 0) {
         ctx.drawImage(birdImage, bird.x, bird.y, bird.width, bird.height);
     } else {
-        ctx.fillStyle = "#FFFF00"; // Warna kuning sebagai placeholder jika gambar gagal
+        // Fallback jika gambar gagal dimuat
+        ctx.fillStyle = "#FFFF00"; // Warna kuning placeholder
         ctx.fillRect(bird.x, bird.y, bird.width, bird.height);
     }
 }
 
-// Fungsi untuk pre-render pola pipa
-function createPipePatterns() {
-    for (let pattern in pipePatterns) {
-        const patternCanvas = document.createElement('canvas');
-        patternCanvas.width = 50;
-        patternCanvas.height = canvas.height;
-        const patternCtx = patternCanvas.getContext('2d');
-        
-        if (pattern === 'brick') {
-            drawBrickPattern(0, 0, 50, canvas.height, patternCtx);
-        } else if (pattern === 'bamboo') {
-            drawBambooPattern(0, 0, 50, canvas.height, patternCtx);
-        } else if (pattern === 'wood') {
-            drawWoodPattern(0, 0, 50, canvas.height, patternCtx);
-        } else if (pattern === 'stone') {
-            drawStonePattern(0, 0, 50, canvas.height, patternCtx);
-        }
-        
-        pipePatterns[pattern] = patternCanvas;
+// --- Penyederhanaan Gambar Pipa ---
+
+// Fungsi untuk menentukan warna pipa berdasarkan skor (menggunakan gradien)
+function getPipeStyle() {
+    let gradient;
+    const pipeWidth = 50; // Lebar pipa tetap
+
+    if (score < 10) { // Level 1: Hijau
+        gradient = ctx.createLinearGradient(0, 0, pipeWidth, 0);
+        gradient.addColorStop(0, '#5DBE3F'); // Hijau terang
+        gradient.addColorStop(1, '#3E892E'); // Hijau gelap
+    } else if (score < 20) { // Level 2: Biru
+        gradient = ctx.createLinearGradient(0, 0, pipeWidth, 0);
+        gradient.addColorStop(0, '#5BC0EB'); // Biru terang
+        gradient.addColorStop(1, '#2E7DAF'); // Biru gelap
+    } else if (score < 30) { // Level 3: Merah
+        gradient = ctx.createLinearGradient(0, 0, pipeWidth, 0);
+        gradient.addColorStop(0, '#F26C4F'); // Merah terang
+        gradient.addColorStop(1, '#C1272D'); // Merah gelap
+    } else { // Level 4+: Ungu
+        gradient = ctx.createLinearGradient(0, 0, pipeWidth, 0);
+        gradient.addColorStop(0, '#A76FB9'); // Ungu terang
+        gradient.addColorStop(1, '#76438A'); // Ungu gelap
     }
+    return gradient;
 }
 
-// Fungsi untuk menggambar pola bata
-function drawBrickPattern(x, y, width, height, context = ctx) {
-    const brickWidth = 25;
-    const brickHeight = 15;
-    const brickColor = context.createLinearGradient(x, y, x + width, y);
-    brickColor.addColorStop(0, '#FF6347');
-    brickColor.addColorStop(1, '#FA8072');
-    context.fillStyle = brickColor;
-
-    for (let row = 0; row < Math.ceil(height / brickHeight); row++) {
-        for (let col = 0; col < Math.ceil(width / brickWidth); col++) {
-            const brickX = x + col * brickWidth + (row % 2 === 0 ? 0 : brickWidth / 2);
-            const brickY = y + row * brickHeight;
-            context.fillRect(brickX, brickY, brickWidth - 2, brickHeight - 2);
-            context.strokeStyle = '#808080';
-            context.lineWidth = 2;
-            context.strokeRect(brickX, brickY, brickWidth - 2, brickHeight - 2);
-        }
-    }
-}
-
-// Fungsi untuk menggambar pola bambu
-function drawBambooPattern(x, y, width, height, context = ctx) {
-    const bambooColor = context.createLinearGradient(x, y, x + width, y);
-    bambooColor.addColorStop(0, '#228B22');
-    bambooColor.addColorStop(1, '#2E8B57');
-    context.fillStyle = bambooColor;
-    context.fillRect(x, y, width, height);
-
-    const segmentHeight = 100;
-    context.strokeStyle = '#8B4513';
-    context.lineWidth = 3;
-
-    for (let i = 0; i < Math.ceil(height / segmentHeight); i++) {
-        const segmentY = y + i * segmentHeight;
-        if (segmentY < y + height) {
-            context.beginPath();
-            context.moveTo(x, segmentY);
-            context.lineTo(x + width, segmentY);
-            context.stroke();
-
-            const side = i % 2 === 0 ? 'left' : 'right';
-            const stemX = side === 'left' ? x : x + width;
-            const stemEndX = side === 'left' ? x - 20 : x + width + 20;
-            const stemY = segmentY + 10;
-
-            context.beginPath();
-            context.strokeStyle = '#8B4513';
-            context.lineWidth = 1;
-            context.moveTo(stemX, stemY);
-            context.lineTo(stemEndX, stemY - 10);
-            context.stroke();
-
-            context.fillStyle = '#32CD32';
-            context.beginPath();
-            context.ellipse(stemEndX, stemY - 10, 8, 3, side === 'left' ? Math.PI / 4 : -Math.PI / 4, 0, 2 * Math.PI);
-            context.fill();
-        }
-    }
-}
-
-// Fungsi untuk menggambar pola kayu
-function drawWoodPattern(x, y, width, height, context = ctx) {
-    const woodColor = context.createLinearGradient(x, y, x + width, y);
-    woodColor.addColorStop(0, '#8B4513');
-    woodColor.addColorStop(1, '#D2B48C');
-    context.fillStyle = woodColor;
-    context.fillRect(x, y, width, height);
-
-    context.strokeStyle = '#A0522D';
-    context.lineWidth = 1;
-
-    for (let i = 0; i < height; i += 10) {
-        context.beginPath();
-        context.moveTo(x, y + i);
-        context.lineTo(x + width, y + i);
-        context.stroke();
-    }
-
-    for (let i = 0; i < width; i += 15) {
-        context.beginPath();
-        context.moveTo(x + i, y);
-        context.lineTo(x + i, y + height);
-        context.stroke();
-    }
-}
-
-// Fungsi untuk menggambar pola batu
-function drawStonePattern(x, y, width, height, context = ctx) {
-    const stoneColors = ['#D2B48C', '#F5F5DC', '#A9A9A9'];
-    context.fillStyle = stoneColors[Math.floor(Math.random() * stoneColors.length)];
-    context.fillRect(x, y, width, height);
-
-    const stoneCount = 10;
-    for (let i = 0; i < stoneCount; i++) {
-        const stoneX = x + Math.random() * width;
-        const stoneY = y + Math.random() * height;
-        const stoneWidth = 20 + Math.random() * 30;
-        const stoneHeight = 15 + Math.random() * 20;
-        context.fillStyle = stoneColors[Math.floor(Math.random() * stoneColors.length)];
-        context.beginPath();
-        context.ellipse(stoneX, stoneY, stoneWidth / 2, stoneHeight / 2, 0, 0, 2 * Math.PI);
-        context.fill();
-        context.strokeStyle = '#696969';
-        context.lineWidth = 1;
-        context.stroke();
-    }
-}
-
-// Fungsi untuk menentukan warna dan pola pipa berdasarkan skor
-function getPipeColors() {
-    if (score < 10) {
-        return { body: ['#FF6347', '#FA8072'], edge: ['#FF6347', '#FA8072'], pattern: 'brick' };
-    } else if (score < 20) {
-        return { body: ['#228B22', '#2E8B57'], edge: ['#228B22', '#2E8B57'], pattern: 'bamboo' };
-    } else if (score < 30) {
-        return { body: ['#8B4513', '#D2B48C'], edge: ['#8B4513', '#D2B48C'], pattern: 'wood' };
-    } else {
-        return { body: ['#D2B48C', '#F5F5DC'], edge: ['#A9A9A9', '#696969'], pattern: 'stone' };
-    }
-}
 
 // Fungsi untuk mendapatkan level saat ini
 function getCurrentLevel() {
-    if (score < 10) return 1;
-    if (score < 20) return 2;
-    if (score < 30) return 3;
-    return 4;
+    return Math.floor(score / 10) + 1;
 }
 
 // Fungsi untuk menyesuaikan kesulitan berdasarkan skor
 function adjustDifficulty() {
-    const difficultyFactor = isMobile ? 0.10 : 0.15; // Lebih toleran untuk mobile
-    
-    if (score === 10) {
-        pipeSpeed = 1.5 * (1 + difficultyFactor);
-        pipeSpawnInterval = Math.round(pipeSpawnInterval * (1 - difficultyFactor/2));
-        pipeGap = Math.round(pipeGap * (1 - difficultyFactor/2));
-        playSound(audioSuccess);
-    } else if (score === 20) {
-        pipeSpeed = 1.5 * (1 + difficultyFactor) * (1 + difficultyFactor);
-        pipeSpawnInterval = Math.round(pipeSpawnInterval * (1 - difficultyFactor/2) * (1 - difficultyFactor/2));
-        pipeGap = Math.round(pipeGap * (1 - difficultyFactor/2) * (1 - difficultyFactor/2));
-        playSound(audioSuccess);
-    } else if (score === 30) {
-        pipeSpeed = 1.5 * (1 + difficultyFactor) * (1 + difficultyFactor) * (1 + difficultyFactor);
-        pipeSpawnInterval = Math.round(pipeSpawnInterval * (1 - difficultyFactor/2) * (1 - difficultyFactor/2) * (1 - difficultyFactor/2));
-        pipeGap = Math.round(pipeGap * (1 - difficultyFactor/2) * (1 - difficultyFactor/2) * (1 - difficultyFactor/2));
-        playSound(audioSuccess);
+    const level = getCurrentLevel();
+    // Hanya adjust jika naik level
+    if (score > 0 && score % 10 === 0) {
+         // Contoh peningkatan: kecepatan +10%, interval spawn -5% per 10 skor
+         pipeSpeed *= 1.10;
+         pipeSpawnInterval = Math.max(60, Math.round(pipeSpawnInterval * 0.95)); // Batas bawah interval spawn
+         // Celah pipa (pipeGap) sudah diatur relatif terhadap tinggi layar, jadi mungkin tidak perlu diubah di sini
+         console.log(`Level Up ${level}! Speed: ${pipeSpeed.toFixed(2)}, Spawn Interval: ${pipeSpawnInterval}`);
+         playSound(successBuffer);
     }
 }
 
-// Deteksi tabrakan dengan toleransi untuk mobile
+// Deteksi tabrakan (sedikit lebih toleran)
 function checkCollision(pipe) {
-    const tolerance = isMobile ? 0.10 : 0.05;
+    const tolerance = 0.1; // 10% toleransi dari ukuran burung
     const birdHitboxX = bird.x + bird.width * tolerance;
     const birdHitboxY = bird.y + bird.height * tolerance;
     const birdHitboxWidth = bird.width * (1 - 2 * tolerance);
     const birdHitboxHeight = bird.height * (1 - 2 * tolerance);
-    
-    return (
-        birdHitboxX + birdHitboxWidth > pipe.x &&
-        birdHitboxX < pipe.x + 50 &&
-        (
-            (birdHitboxY + birdHitboxHeight > pipe.top && birdHitboxY < pipe.top) ||
-            (birdHitboxY < canvas.height - pipe.bottom && birdHitboxY + birdHitboxHeight > canvas.height - pipe.bottom)
-        )
-    );
+
+    const pipeWidth = 50; // Lebar pipa
+    const pipeEdgeWidth = 60; // Lebar tepi pipa
+
+    // Cek tabrakan dengan badan pipa utama (lebar 50)
+     const bodyCollision = birdHitboxX + birdHitboxWidth > pipe.x &&
+                           birdHitboxX < pipe.x + pipeWidth &&
+                           (birdHitboxY < pipe.top || birdHitboxY + birdHitboxHeight > canvas.height - pipe.bottom);
+
+    // Cek tabrakan dengan tepi pipa (lebar 60, sedikit lebih lebar)
+    const edgeCollision = birdHitboxX + birdHitboxWidth > pipe.x - 5 && // Tepi dimulai 5px sebelum badan
+                          birdHitboxX < pipe.x + pipeWidth + 5 && // Tepi berakhir 5px setelah badan
+                          ( (birdHitboxY < pipe.top + 15 && birdHitboxY + birdHitboxHeight > pipe.top) || // Tepi atas
+                            (birdHitboxY < canvas.height - pipe.bottom && birdHitboxY + birdHitboxHeight > canvas.height - pipe.bottom - 15) ); // Tepi bawah
+
+
+    return bodyCollision || edgeCollision;
 }
 
-// Fungsi untuk membuat dan menggambar pipa
+// Fungsi untuk membuat dan menggambar pipa (diserdehanakan)
 function drawPipes() {
+    // Tambah pipa baru secara berkala
     if (frameCount % pipeSpawnInterval === 0) {
-        let pipeHeight = Math.floor(Math.random() * (canvas.height - pipeGap)) + 50;
+        // Pastikan pipeGap sudah dihitung oleh resizeCanvas
+        const minTop = 50; // Jarak minimal dari atas
+        const maxTop = canvas.height - pipeGap - 50; // Jarak maksimal dari atas (menyisakan ruang untuk celah & pipa bawah)
+        let topPipeHeight = Math.floor(Math.random() * (maxTop - minTop + 1)) + minTop;
+        let bottomPipeHeight = canvas.height - topPipeHeight - pipeGap;
+
         pipes.push({
             x: canvas.width,
-            top: pipeHeight,
-            bottom: canvas.height - pipeHeight - pipeGap,
+            top: topPipeHeight, // Tinggi bagian atas (yang kosong)
+            bottom: bottomPipeHeight, // Tinggi bagian bawah (yang kosong)
             scored: false
         });
     }
 
+    // Gambar dan update semua pipa
+    ctx.fillStyle = getPipeStyle(); // Ambil style gradien berdasarkan skor
+
     for (let i = pipes.length - 1; i >= 0; i--) {
         pipes[i].x -= pipeSpeed;
 
-        // Ambil warna dan pola pipa berdasarkan skor
-        const colors = getPipeColors();
-        const pattern = pipePatterns[colors.pattern];
-        
-        // Pipa atas
-        if (pattern) {
-            // Gunakan pola yang sudah di-cache
-            ctx.drawImage(pattern, 0, 0, 50, pipes[i].top, pipes[i].x, 0, 50, pipes[i].top);
-            // Tepi pipa atas
-            ctx.drawImage(pattern, 0, 0, 50, 15, pipes[i].x - 5, pipes[i].top - 15, 60, 15);
-            
-            // Pipa bawah
-            ctx.drawImage(pattern, 0, 0, 50, pipes[i].bottom, pipes[i].x, canvas.height - pipes[i].bottom, 50, pipes[i].bottom);
-            // Tepi pipa bawah
-            ctx.drawImage(pattern, 0, 0, 50, 15, pipes[i].x - 5, canvas.height - pipes[i].bottom, 60, 15);
-        } else {
-            // Fallback ke rendering langsung
-            if (colors.pattern === 'brick') {
-                drawBrickPattern(pipes[i].x, 0, 50, pipes[i].top - 15);
-                drawBrickPattern(pipes[i].x, pipes[i].top - 15, 50, 15);
-                drawBrickPattern(pipes[i].x, canvas.height - pipes[i].bottom + 15, 50, pipes[i].bottom - 15);
-                drawBrickPattern(pipes[i].x, canvas.height - pipes[i].bottom, 50, 15);
-            } else if (colors.pattern === 'bamboo') {
-                drawBambooPattern(pipes[i].x, 0, 50, pipes[i].top - 15);
-                drawBambooPattern(pipes[i].x, pipes[i].top - 15, 50, 15);
-                drawBambooPattern(pipes[i].x, canvas.height - pipes[i].bottom + 15, 50, pipes[i].bottom - 15);
-                drawBambooPattern(pipes[i].x, canvas.height - pipes[i].bottom, 50, 15);
-            } else if (colors.pattern === 'wood') {
-                drawWoodPattern(pipes[i].x, 0, 50, pipes[i].top - 15);
-                drawWoodPattern(pipes[i].x, pipes[i].top - 15, 50, 15);
-                drawWoodPattern(pipes[i].x, canvas.height - pipes[i].bottom + 15, 50, pipes[i].bottom - 15);
-                drawWoodPattern(pipes[i].x, canvas.height - pipes[i].bottom, 50, 15);
-            } else if (colors.pattern === 'stone') {
-                drawStonePattern(pipes[i].x, 0, 50, pipes[i].top - 15);
-                drawStonePattern(pipes[i].x, pipes[i].top - 15, 50, 15);
-                drawStonePattern(pipes[i].x, canvas.height - pipes[i].bottom + 15, 50, pipes[i].bottom - 15);
-                drawStonePattern(pipes[i].x, canvas.height - pipes[i].bottom, 50, 15);
-            }
-        }
+        const pipeWidth = 50;
+        const pipeEdgeWidth = 60; // Lebar untuk 'cap'
+        const pipeEdgeHeight = 15; // Tinggi untuk 'cap'
+        const pipeX = pipes[i].x;
+        const pipeTopHeight = pipes[i].top; // Ini adalah tinggi ruang kosong di atas pipa bawah
+        const pipeBottomHeight = pipes[i].bottom; // Ini adalah tinggi ruang kosong di bawah pipa atas
 
-        // Deteksi tabrakan dengan toleransi
+        // Gambar Pipa Atas
+        ctx.fillRect(pipeX, 0, pipeWidth, pipeTopHeight);
+        // Gambar Tepi Pipa Atas (sedikit lebih lebar)
+        ctx.fillRect(pipeX - (pipeEdgeWidth - pipeWidth) / 2, pipeTopHeight - pipeEdgeHeight, pipeEdgeWidth, pipeEdgeHeight);
+
+        // Gambar Pipa Bawah
+        ctx.fillRect(pipeX, canvas.height - pipeBottomHeight, pipeWidth, pipeBottomHeight);
+        // Gambar Tepi Pipa Bawah (sedikit lebih lebar)
+        ctx.fillRect(pipeX - (pipeEdgeWidth - pipeWidth) / 2, canvas.height - pipeBottomHeight, pipeEdgeWidth, pipeEdgeHeight);
+
+
+        // Deteksi tabrakan
         if (checkCollision(pipes[i])) {
             gameOver = true;
-            playSound(audioGameOver);
+            gameStarted = false; // Tandai game tidak aktif lagi
+            playSound(gameOverBuffer);
+            gameContainer.classList.remove('game-active');
+            gameContainer.classList.add('game-over');
+            if (pauseBtn) pauseBtn.style.display = 'none'; // Sembunyikan tombol pause
+            break; // Hentikan loop pipa jika game over
         }
 
-        // Tambah skor
-        if (pipes[i].x + 50 < bird.x && !pipes[i].scored) {
+        // Tambah skor jika burung melewati pipa
+        if (pipes[i].x + pipeWidth < bird.x && !pipes[i].scored) {
             score++;
             pipes[i].scored = true;
-            playSound(audioScore);
-            adjustDifficulty();
+            playSound(scoreBuffer);
+            adjustDifficulty(); // Cek apakah perlu naik level
         }
 
-        // Hapus pipa yang sudah lelet
-        if (pipes[i].x < -50) {
+        // Hapus pipa yang sudah keluar layar
+        if (pipes[i].x < -pipeEdgeWidth) { // Gunakan lebar tepi untuk menghapus
             pipes.splice(i, 1);
         }
     }
 }
 
-// Fungsi untuk menggambar UI
+// Fungsi untuk menggambar UI (Skor, Level, Pesan)
 function drawUI() {
-    const fontSize = Math.max(16, Math.floor(canvas.width / 15));
-    
-    // Gambar skor
-    ctx.fillStyle = "#000000";
-    ctx.font = `${fontSize}px Arial`;
-    ctx.fillText("Score: " + score, 10, fontSize + 5);
-    
-    // Gambar level
+    const fontSize = Math.max(16, Math.floor(canvas.width / 20)); // Ukuran font relatif
+
+    // Gambar Skor
+    ctx.fillStyle = "#FFFFFF"; // Warna putih agar kontras
+    ctx.strokeStyle = "#000000"; // Outline hitam
+    ctx.lineWidth = 2;
+    ctx.font = `bold ${fontSize}px Arial`;
+    ctx.textAlign = "left";
+    const scoreText = "Score: " + score;
+    ctx.strokeText(scoreText, 10, fontSize + 5);
+    ctx.fillText(scoreText, 10, fontSize + 5);
+
+    // Gambar Level
     const level = getCurrentLevel();
-    ctx.fillStyle = "#000000";
-    ctx.font = `${fontSize}px Arial`;
-    ctx.fillText(`Level: ${level}`, canvas.width - 100, fontSize + 5);
-    
-    // Progress bar ke level berikutnya
-    const progress = (score % 10) / 10;
-    
-    const barWidth = 80;
-    const barHeight = fontSize / 2;
-    const barX = canvas.width - barWidth - 10;
-    const barY = fontSize + 10;
-    
-    // Background
-    ctx.fillStyle = "#CCCCCC";
-    ctx.fillRect(barX, barY, barWidth, barHeight);
-    
-    // Progress
-    ctx.fillStyle = "#00AA00";
-    ctx.fillRect(barX, barY, barWidth * progress, barHeight);
-    
-    // Border
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX, barY, barWidth, barHeight);
-    
-    // Gambar UI game over 
+    const levelText = `Level: ${level}`;
+    ctx.textAlign = "right";
+    ctx.strokeText(levelText, canvas.width - 10, fontSize + 5);
+    ctx.fillText(levelText, canvas.width - 10, fontSize + 5);
+
+    // Tampilkan pesan Game Over
     if (gameOver) {
-        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.6)"; // Overlay gelap
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
+
         ctx.fillStyle = "#FFFFFF";
-        ctx.font = `${fontSize * 1.5}px Arial`;
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 3;
         ctx.textAlign = "center";
-        ctx.fillText("Game Over", canvas.width / 2, canvas.height / 2);
-        
-        ctx.font = `${fontSize * 0.8}px Arial`;
-        if (isMobile) {
-            ctx.fillText("Tap to Restart", canvas.width / 2, canvas.height / 2 + fontSize * 2);
-        } else {
-            ctx.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + fontSize * 2);
-        }
-        ctx.textAlign = "left";
+
+        const gameOverFontSize = Math.max(24, Math.floor(canvas.width / 10));
+        ctx.font = `bold ${gameOverFontSize}px Arial`;
+        const gameOverText = "Game Over";
+        ctx.strokeText(gameOverText, canvas.width / 2, canvas.height / 2 - gameOverFontSize / 2);
+        ctx.fillText(gameOverText, canvas.width / 2, canvas.height / 2 - gameOverFontSize / 2);
+
+
+        const restartFontSize = Math.max(16, Math.floor(canvas.width / 25));
+        ctx.font = `${restartFontSize}px Arial`;
+        const restartText = "Tekan 'Main Lagi'"; // Pesan sesuai tombol
+        ctx.strokeText(restartText, canvas.width / 2, canvas.height / 2 + restartFontSize * 1.5);
+        ctx.fillText(restartText, canvas.width / 2, canvas.height / 2 + restartFontSize * 1.5);
     }
-    
-    // Gambar UI paused
+
+    // Tampilkan pesan Paused
     if (isPaused && !gameOver) {
         ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-        ctx.font = `${fontSize * 1.2}px Arial`;
         ctx.textAlign = "center";
+        const pausedFontSize = Math.max(20, Math.floor(canvas.width / 15));
+        ctx.font = `bold ${pausedFontSize}px Arial`;
+        ctx.fillStyle = "#FFFFFF";
         ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2);
-        ctx.textAlign = "left";
     }
 }
 
-// Fungsi untuk reset permainan
+
+// Fungsi untuk reset permainan (dipanggil oleh tombol Main Lagi)
 function resetGame() {
-    bird.y = canvas.height / 3;
-    bird.velocity = 0;
-    pipes = [];
-    score = 0;
-    gameOver = false;
-    isPaused = false;
-    isStartPlaying = true;
-    jumpQueue = false;
-    pipeSpeed = 1.5;
-    pipeSpawnInterval = isMobile ? 180 : 150;
-    pipeGap = isMobile ? 220 : 200;
-    playSound(audioStart);
-    if (pauseBtn) {
-        pauseBtn.textContent = "⏸️";
-    }
+    // Cukup panggil startGame() lagi, karena sudah menghandle reset state
+    startGame();
 }
 
-// Fungsi utama permainan
+// Fungsi utama game loop
+let animationFrameId;
 function update() {
-    // Skip logic jika paused
-    if (isPaused && !gameOver) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawBird();
-        drawPipes();
-        drawUI();
-        requestAnimationFrame(update);
-        return;
-    }
-    
+    // Hentikan loop jika game over
     if (gameOver) {
-        drawUI();
-        requestAnimationFrame(update);
+        drawUI(); // Tetap gambar UI game over
         return;
     }
 
-    if (frameCount === 1) {
-        isStartPlaying = true;
+    // Hentikan loop jika dijeda
+    if (isPaused) {
+        // Tetap gambar state terakhir sebelum pause + UI pause
+        ctx.clearRect(0, 0, canvas.width, canvas.height); // Bersihkan canvas
+        drawPipes(); // Gambar pipa di posisi terakhir
+        drawBird(); // Gambar burung di posisi terakhir
+        drawUI(); // Gambar UI (termasuk pesan pause)
+        // Jangan panggil requestAnimationFrame lagi sampai di-resume
+        return;
     }
 
+
+    // Bersihkan Canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Update Posisi Burung
     bird.velocity += bird.gravity;
     bird.y += bird.velocity;
 
+    // Cek Tabrakan dengan Batas Bawah Layar
     if (bird.y + bird.height > canvas.height) {
-        bird.y = canvas.height - bird.height;
+        bird.y = canvas.height - bird.height; // Posisikan di dasar
         bird.velocity = 0;
         gameOver = true;
-        playSound(audioGameOver);
+        gameStarted = false;
+        playSound(gameOverBuffer);
+        gameContainer.classList.remove('game-active');
+        gameContainer.classList.add('game-over');
+         if (pauseBtn) pauseBtn.style.display = 'none';
     }
-    
+
+    // Cek Tabrakan dengan Batas Atas Layar (opsional, cegah terbang ke atas)
     if (bird.y < 0) {
         bird.y = 0;
-        bird.velocity = 0;
+        bird.velocity = 0; // Hentikan momentum ke atas
     }
 
-    drawBird();
-    drawPipes();
-    drawUI();
+    // Gambar elemen-elemen game
+    drawPipes(); // Gambar pipa dulu (latar belakang)
+    drawBird(); // Gambar burung di atas pipa
+    drawUI(); // Gambar skor dll di atas segalanya
 
+    // Tingkatkan frame count
     frameCount++;
-    requestAnimationFrame(update);
+
+    // Minta frame animasi berikutnya
+    animationFrameId = requestAnimationFrame(update);
 }
 
 // Fungsi inisialisasi game
 function initGame() {
-    resizeCanvas();
-    createPipePatterns();
-    addPauseButton();
-    
-    // Listeners untuk resize window
-    window.addEventListener('resize', () => {
-        resizeCanvas();
-    });
-    
-    // Memastikan audio bisa diputar
-    document.addEventListener('click', initAudio, { once: true });
-    document.addEventListener('keydown', initAudio, { once: true });
-    document.addEventListener('touchstart', initAudio, { once: true });
-    
-    // Memastikan gambar burung dimuat
-    if (birdImage.complete) {
-        update();
-    } else {
-        birdImage.onload = function() {
-            console.log("Gambar burung dimuat dengan sukses!");
-            update();
+    addPauseButton(); // Tambahkan tombol pause ke DOM
+    resizeCanvas(); // Sesuaikan ukuran canvas saat pertama kali load
+    updateSoundButton(); // Set ikon tombol suara awal
+
+    // Gambar tampilan awal (sebelum game dimulai)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawBird(); // Gambar burung di posisi awal
+    // Tampilkan pesan untuk memulai
+    ctx.fillStyle = "#FFFFFF";
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 2;
+    ctx.textAlign = "center";
+    const startFontSize = Math.max(18, Math.floor(canvas.width / 22));
+    ctx.font = `bold ${startFontSize}px Arial`;
+    const startText = "Tekan 'Mulai Permainan'";
+    ctx.strokeText(startText, canvas.width / 2, canvas.height / 2 + 50);
+    ctx.fillText(startText, canvas.width / 2, canvas.height / 2 + 50);
+
+
+    // Memastikan gambar burung dimuat sebelum game loop dimulai (jika perlu)
+    if (!birdImage.complete) {
+        birdImage.onload = () => {
+            console.log("Gambar burung dimuat.");
+            // Gambar ulang tampilan awal setelah gambar siap
+            if (!gameStarted) {
+                 ctx.clearRect(0, 0, canvas.width, canvas.height);
+                 drawBird();
+                 ctx.fillStyle = "#FFFFFF"; // Warna teks
+                 ctx.strokeStyle = "#000000"; // Outline
+                 ctx.lineWidth = 2;
+                 ctx.textAlign = "center";
+                 ctx.font = `bold ${startFontSize}px Arial`;
+                 ctx.strokeText(startText, canvas.width / 2, canvas.height / 2 + 50);
+                 ctx.fillText(startText, canvas.width / 2, canvas.height / 2 + 50);
+            }
         };
-        
-        birdImage.onerror = function() {
-            console.error("Gagal memuat gambar burung! Periksa path file 'burung.png'.");
-            update();
+        birdImage.onerror = () => {
+            console.error("Gagal memuat gambar burung!");
         };
     }
 }
 
-// Jalankan game
+// Jalankan inisialisasi game
 initGame();
