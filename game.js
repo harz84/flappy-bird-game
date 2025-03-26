@@ -61,8 +61,8 @@ let bird = {
     width: 60, // Akan di-override oleh resizeCanvas
     height: 40, // Akan di-override oleh resizeCanvas
     // --- PERUBAHAN GRAVITY & LIFT ---
-    gravity: isMobile ? 0.14 : 0.17, // Gravitasi dikurangi (burung lebih ringan)
-    lift: isMobile ? -7.9 : -9.4,   // Lompatan diperkuat 20% (lebih negatif)
+    gravity: isMobile ? 0.11 : 0.14, // Gravitasi dikurangi (burung lebih ringan)
+    lift: isMobile ? -9.5 : -11.4,   // Lompatan diperkuat 20% (lebih negatif)
     // --- AKHIR PERUBAHAN ---
     velocity: 0
 };
@@ -80,7 +80,7 @@ let lastJumpTime = 0;
 const MIN_JUMP_INTERVAL = isMobile ? 250 : 150; // ms, sedikit lebih lama di mobile
 
 // Variabel untuk kesulitan
-let pipeSpeed = isMobile ? 1.3 : 1.5; // Kecepatan awal pipa (sedikit lebih lambat di mobile)
+let pipeSpeed = isMobile ? 1.05 : 1.2; // Kecepatan awal pipa (sedikit lebih lambat di mobile)
 let pipeSpawnInterval = isMobile ? 150 : 120; // Jarak antar pipa (lebih jauh di mobile)
 let pipeGap = 200; // Celah antar pipa (Akan di-override oleh resizeCanvas)
 
