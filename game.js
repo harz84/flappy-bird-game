@@ -60,10 +60,13 @@ let bird = {
     y: 150,
     width: 60, // Akan di-override oleh resizeCanvas
     height: 40, // Akan di-override oleh resizeCanvas
-    gravity: isMobile ? 0.25 : 0.3, // Gravitasi sedikit lebih rendah di mobile
-    lift: isMobile ? -5.5 : -6.5, // Lompatan sedikit lebih kuat di mobile
+    // --- PERUBAHAN GRAVITY & LIFT ---
+    gravity: isMobile ? 0.20 : 0.24, // Gravitasi dikurangi (burung lebih ringan)
+    lift: isMobile ? -6.6 : -7.8,   // Lompatan diperkuat 20% (lebih negatif)
+    // --- AKHIR PERUBAHAN ---
     velocity: 0
 };
+
 
 let pipes = [];
 let frameCount = 0;
